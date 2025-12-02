@@ -11,7 +11,7 @@ from datetime import datetime
 APP_NAME = "ARTEM Messenger"
 APP_VERSION = "1.0.0"
 APP_BUILD = "20241215.001"
-GITHUB_REPO = "твой-username/artem-messenger"  # ЗАМЕНИ на свой репозиторий!
+GITHUB_REPO = "artem123456789101112/artem-messenger"  # ЗАМЕНИ на свой репозиторий!
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 # =============== ЦВЕТА ===============
@@ -781,4 +781,5 @@ if __name__ == "__main__":
     print(f"🔗 Репозиторий: {GITHUB_REPO}")
     print("=" * 50)
     
+
     ft.app(target=main)
