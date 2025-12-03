@@ -38,103 +38,83 @@ jobs:
           automake \
           libtool \
           pkg-config \
-          curl \
-          aria2
+          curl
 
     - name: Install Python packages
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install buildozer cython flet==0.21.2
 
-    - name: Download Android NDK r23c
-      run: |
-        echo "=== Downloading Android NDK r23c ==="
-        sudo apt-get install -y aria2
-        aria2c -x 16 -s 16 -k 1M https://dl.google.com/android/repository/android-ndk-r23c-linux.zip -o android-ndk.zip
-        if [ ! -f "android-ndk.zip" ]; then
-          echo "Download with aria2 failed, trying curl..."
-          curl -L -o android-ndk.zip https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
-        fi
-        echo "Extracting NDK..."
-        unzip -q android-ndk.zip -d /tmp/
-        echo "ANDROID_NDK_HOME=/tmp/android-ndk-r23c" >> $GITHUB_ENV
-        echo "ANDROID_NDK_ROOT=/tmp/android-ndk-r23c" >> $GITHUB_ENV
-
-    - name: Create buildozer.spec
+    - name: Pre-create buildozer.spec with NDK 25b
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating buildozer.spec..."
-        rm -f buildozer.spec
+        echo "Creating buildozer.spec with NDK 25b..."
         
-        # Создаем файл построчно
-        echo '[app]' > buildozer.spec
-        echo 'title = ARTEM Messenger' >> buildozer.spec
-        echo 'package.name = artem.messenger' >> buildozer.spec
-        echo 'package.domain = org.artem' >> buildozer.spec
-        echo 'source.dir = .' >> buildozer.spec
-        echo 'version = 1.0.0' >> buildozer.spec
-        echo 'requirements = python3,cython,flet==0.21.2' >> buildozer.spec
-        echo 'orientation = portrait' >> buildozer.spec
-        echo 'android.api = 33' >> buildozer.spec
-        echo 'android.minapi = 21' >> buildozer.spec
-        echo 'android.accept_sdk_license = true' >> buildozer.spec
-        echo 'android.ndk = 23c' >> buildozer.spec
-        echo 'android.sdk = 33' >> buildozer.spec
-        echo '' >> buildozer.spec
-        echo '[buildozer]' >> buildozer.spec
-        echo 'log_level = 2' >> buildozer.spec
-        echo 'warn_on_root = 1' >> buildozer.spec
+        cat > buildozer.spec << "END"
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+version = 1.0.0
+requirements = python3,cython,flet==0.21.2
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.accept_sdk_license = true
+android.ndk = 25b
+android.sdk = 33
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+END
         
-        echo "=== buildozer.spec created ==="
+        echo "✅ buildozer.spec created"
         cat buildozer.spec
 
-    - name: Initialize Buildozer
+    - name: Build APK with Buildozer (auto-download NDK 25b)
       working-directory: ./artem_mobile_flet
-      env:
-        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
-        ANDROID_NDK: /tmp/android-ndk-r23c
+      continue-on-error: false
+      timeout-minutes: 150
       run: |
-        echo "=== Initializing Buildozer ==="
-        echo "NDK path: $ANDROID_NDK_HOME"
-        if [ -d "$ANDROID_NDK_HOME" ]; then
-          echo "✅ NDK found"
-        else
-          echo "❌ NDK not found"
-          exit 1
-        fi
-        buildozer init 2>&1 | tail -50
-        echo "=== Buildozer initialized ==="
-
-    - name: Build APK
-      working-directory: ./artem_mobile_flet
-      env:
-        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
-        ANDROID_NDK: /tmp/android-ndk-r23c
-      timeout-minutes: 120
-      run: |
-        echo "=== STARTING APK BUILD ==="
-        echo "Running: buildozer -v android debug"
+        echo "=== STARTING APK BUILD (Buildozer will download NDK 25b) ==="
+        echo "This will take 60-120 minutes for first build..."
         
-        # Запускаем сборку и сохраняем лог
+        # Запускаем сборку
+        echo "Step 1: Buildozer will download Android SDK and NDK 25b..."
+        echo "This may take 30-40 minutes..."
+        
+        # Запускаем сборку с подробным выводом
         buildozer -v android debug 2>&1 | tee full_build.log
         
         echo "=== Checking for APK ==="
         if find bin/ -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "✅ APK found in bin/"
+          echo "🎉 SUCCESS: APK found!"
           ls -la bin/*.apk
-          APK_FILE=$(find bin/ -name "*.apk" -type f | head -1)
-          echo "Main APK: $APK_FILE"
-        elif find . -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "⚠️  APK found outside bin/"
-          find . -name "*.apk" -type f -exec ls -la {} \;
-          echo "Copying APK to bin/"
-          mkdir -p bin
-          find . -name "*.apk" -type f -exec cp {} bin/ \;
+          echo "APK size: $(du -h bin/*.apk | cut -f1)"
+          
+          # Создаем удобную копию
+          mkdir -p output
+          cp bin/*.apk output/
+          
         else
-          echo "❌ NO APK FOUND"
-          echo "Last 100 lines of log:"
-          tail -100 full_build.log
-          exit 1
+          echo "❌ No APK found in bin/"
+          echo "Searching in other directories..."
+          find . -name "*.apk" -type f 2>/dev/null | while read file; do
+            echo "Found APK: $file"
+            ls -la "$file"
+            # Копируем в bin/
+            mkdir -p bin
+            cp "$file" bin/
+          done
+          
+          if ! find . -name "*.apk" -type f 2>/dev/null | grep -q .; then
+            echo "❌ No APK found anywhere!"
+            echo "Last 100 lines of build log:"
+            tail -100 full_build.log
+            exit 1
+          fi
         fi
 
     - name: Upload APK artifact
@@ -145,12 +125,10 @@ jobs:
         path: artem_mobile_flet/bin/*.apk
         retention-days: 7
 
-    - name: Upload build logs
-      if: always()
+    - name: Upload build logs on failure
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: Build-Logs
-        path: |
-          artem_mobile_flet/full_build.log
-          artem_mobile_flet/.buildozer/**/*.log
+        path: artem_mobile_flet/full_build.log
         retention-days: 3
