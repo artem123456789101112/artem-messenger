@@ -50,9 +50,14 @@ jobs:
         echo "=== Cython Check ==="
         python -c "import cython; print('Cython version: ' + cython.__version__)"
 
-    - name: Create buildozer.spec CORRECTLY
+    - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
+        echo "Creating CORRECT buildozer.spec..."
+        # Удаляем старый файл если есть с опечаткой
+        rm -f bulldozer.spec
+        
+        # Создаем новый ПРАВИЛЬНЫЙ файл
         echo "[app]" > buildozer.spec
         echo "title = ARTEM Messenger" >> buildozer.spec
         echo "package.name = artem.messenger" >> buildozer.spec
@@ -71,14 +76,25 @@ jobs:
         
         echo "=== buildozer.spec created ==="
         cat buildozer.spec
+        echo "=== Checking for typos ==="
+        if grep -q "bulldozer" buildozer.spec; then
+          echo "❌ ERROR: Found 'bulldozer' typo!"
+          exit 1
+        fi
+        if grep -q "ARTH" buildozer.spec; then
+          echo "❌ ERROR: Found 'ARTH' typo!"
+          exit 1
+        fi
+        if grep -q "python3.cython" buildozer.spec; then
+          echo "❌ ERROR: Found wrong requirements format!"
+          exit 1
+        fi
+        echo "✅ No typos found"
 
-    - name: Initialize Buildozer (first time setup)
+    - name: Initialize Buildozer
       working-directory: ./artem_mobile_flet
       run: |
         echo "=== Initializing Buildozer ==="
-        # Удаляем старый файл если есть с опечаткой
-        rm -f bulldozer.spec
-        # Инициализируем buildozer
         buildozer init 2>&1 | tail -20
         echo "=== Buildozer initialized ==="
 
@@ -88,38 +104,34 @@ jobs:
       timeout-minutes: 90
       run: |
         echo "=== Starting Buildozer APK build ==="
-        # Проверяем что файл существует
+        echo "Current directory: $(pwd)"
+        echo "Files in directory:"
+        ls -la
+        
         if [ -f "buildozer.spec" ]; then
-          echo "✅ buildozer.spec found"
+          echo "✅ buildozer.spec exists"
+          echo "First few lines of buildozer.spec:"
+          head -20 buildozer.spec
         else
-          echo "❌ buildozer.spec NOT found! Creating..."
-          echo "[app]" > buildozer.spec
-          echo "title = ARTEM Messenger" >> buildozer.spec
-          echo "package.name = artem.messenger" >> buildozer.spec
-          echo "package.domain = org.artem" >> buildozer.spec
-          echo "source.dir = ." >> buildozer.spec
-          echo "version = 1.0.0" >> buildozer.spec
-          echo "requirements = python3,cython,flet" >> buildozer.spec
-          echo "orientation = portrait" >> buildozer.spec
-          echo "android.api = 33" >> buildozer.spec
-          echo "android.minapi = 21" >> buildozer.spec
-          echo "android.accept_sdk_license = true" >> buildozer.spec
-          echo "android.ndk = 25b" >> buildozer.spec
-          echo "[buildozer]" >> buildozer.spec
-          echo "log_level = 2" >> buildozer.spec
+          echo "❌ buildozer.spec NOT found!"
+          exit 1
         fi
         
-        # Запускаем сборку с подробным выводом
-        buildozer -v android debug 2>&1 | tail -200
+        # Запускаем сборку
+        echo "=== Running buildozer ==="
+        buildozer -v android debug
         
         echo "=== Checking for APK ==="
-        if find . -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "✅ APK found!"
+        if find bin/ -name "*.apk" 2>/dev/null | grep -q .; then
+          echo "✅ APK found in bin/"
+          ls -la bin/*.apk
+        elif find . -name "*.apk" 2>/dev/null | grep -q .; then
+          echo "✅ APK found somewhere"
           find . -name "*.apk" -type f | xargs ls -la
-          echo "APK path: $(find . -name "*.apk" -type f | head -1)"
         else
-          echo "❌ No APK found. Checking logs..."
-          find . -type f -name "*.log" | head -5 | xargs tail -50
+          echo "❌ No APK found"
+          echo "Looking for logs..."
+          find . -name "*.log" -type f | head -5 | xargs -I {} sh -c 'echo "=== {} ==="; tail -50 {}'
           exit 1
         fi
 
@@ -130,13 +142,3 @@ jobs:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
         retention-days: 7
-
-    - name: Upload build logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build-Logs
-        path: |
-          artem_mobile_flet/buildozer.log
-          artem_mobile_flet/.buildozer/**/*.log
-        retention-days: 3
