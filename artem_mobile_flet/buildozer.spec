@@ -10,6 +10,8 @@ android.api = 33
 android.minapi = 21
 android.accept_sdk_license = true
 android.ndk = 23c
+android.sdk = 33
 
 [buildozer]
 log_level = 2
+warn_on_root = 1

@@ -7,7 +7,7 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180  # 3 часа для полной сборки
 
     steps:
     - name: Checkout repository
@@ -38,111 +38,190 @@ jobs:
           automake \
           libtool \
           pkg-config \
-          wget \
           curl \
-          make \
-          gcc \
-          g++ \
-          file
+          aria2  # Для быстрой загрузки
 
     - name: Install Python packages
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install buildozer cython flet==0.21.2
 
-    - name: Setup Android NDK r23c
+    - name: Quick setup Android NDK r23c with aria2
       run: |
-        echo "=== Downloading Android NDK r23c ==="
-        wget -q https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
-        unzip -q android-ndk-r23c-linux.zip -d /tmp/
-        echo "ANDROID_NDK_HOME=/tmp/android-ndk-r23c" >> $GITHUB_ENV
-        echo "ANDROID_NDK_ROOT=/tmp/android-ndk-r23c" >> $GITHUB_ENV
+        echo "=== FAST Downloading Android NDK r23c with aria2 ==="
+        
+        # Используем aria2 для многопоточной загрузки
+        sudo apt-get install -y aria2
+        
+        # Скачиваем NDK через aria2 (быстрее)
+        aria2c -x 16 -s 16 -k 1M \
+          https://dl.google.com/android/repository/android-ndk-r23c-linux.zip \
+          -o android-ndk.zip
+        
+        # Проверяем что файл скачался
+        if [ -f "android-ndk.zip" ]; then
+          echo "✅ NDK downloaded successfully"
+          echo "File size: $(du -h android-ndk.zip | cut -f1)"
+        else
+          echo "❌ NDK download failed, trying with curl..."
+          curl -L -o android-ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+        fi
+        
+        # Распаковываем
+        echo "=== Extracting NDK ==="
+        unzip -q android-ndk.zip -d /tmp/
+        
+        # Проверяем распаковку
+        if [ -d "/tmp/android-ndk-r23c" ]; then
+          echo "✅ NDK extracted successfully"
+          echo "ANDROID_NDK_HOME=/tmp/android-ndk-r23c" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=/tmp/android-ndk-r23c" >> $GITHUB_ENV
+        else
+          echo "❌ NDK extraction failed"
+          exit 1
+        fi
 
-    - name: Create buildozer.spec
+    - name: Pre-create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating buildozer.spec..."
+        echo "Pre-creating buildozer.spec..."
         
-        # Удаляем старые файлы
-        rm -f buildozer.spec bulldozer.spec
+        cat > buildozer.spec << "END"
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+version = 1.0.0
+requirements = python3,cython,flet==0.21.2
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.accept_sdk_license = true
+android.ndk = 23c
+android.sdk = 33
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+END
         
-        # Создаем простой spec файл
-        echo '[app]' > buildozer.spec
-        echo 'title = ARTEM Messenger' >> buildozer.spec
-        echo 'package.name = artem.messenger' >> buildozer.spec
-        echo 'package.domain = org.artem' >> buildozer.spec
-        echo 'source.dir = .' >> buildozer.spec
-        echo 'version = 1.0.0' >> buildozer.spec
-        echo 'requirements = python3,cython,flet==0.21.2' >> buildozer.spec
-        echo 'orientation = portrait' >> buildozer.spec
-        echo 'android.api = 33' >> buildozer.spec
-        echo 'android.minapi = 21' >> buildozer.spec
-        echo 'android.accept_sdk_license = true' >> buildozer.spec
-        echo 'android.ndk = 23c' >> buildozer.spec
-        echo '' >> buildozer.spec
-        echo '[buildozer]' >> buildozer.spec
-        echo 'log_level = 2' >> buildozer.spec
-        
-        echo "=== buildozer.spec created ==="
+        echo "✅ buildozer.spec created"
         cat buildozer.spec
 
-    - name: Initialize Buildozer
+    - name: Initialize Buildozer with pre-downloaded NDK
       working-directory: ./artem_mobile_flet
       env:
         ANDROID_NDK_HOME: /tmp/android-ndk-r23c
+        ANDROID_NDK: /tmp/android-ndk-r23c
       run: |
         echo "=== Initializing Buildozer ==="
-        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "Using NDK from: $ANDROID_NDK_HOME"
         
-        # Инициализируем buildozer
-        buildozer init 2>&1 | tail -30
-
-    - name: Build APK
-      working-directory: ./artem_mobile_flet
-      env:
-        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
-      continue-on-error: false
-      timeout-minutes: 100
-      run: |
-        echo "=== Starting Buildozer APK build ==="
-        
-        # Проверяем что файл существует
-        if [ -f "buildozer.spec" ]; then
-          echo "✅ buildozer.spec found"
-          echo "First 10 lines:"
-          head -10 buildozer.spec
+        # Проверяем NDK
+        if [ -d "$ANDROID_NDK_HOME" ]; then
+          echo "✅ NDK found at $ANDROID_NDK_HOME"
+          ls -la $ANDROID_NDK_HOME | head -10
         else
-          echo "❌ buildozer.spec NOT found!"
+          echo "❌ NDK not found at $ANDROID_NDK_HOME"
           exit 1
         fi
         
-        # Запускаем сборку
-        echo "=== Running buildozer ==="
-        buildozer -v android debug 2>&1 | tail -200
+        # Инициализируем buildozer
+        echo "Running: buildozer init"
+        timeout 300 buildozer init 2>&1 | tail -50
+        
+        echo "=== Buildozer initialized ==="
+
+    - name: Build APK (main step)
+      working-directory: ./artem_mobile_flet
+      env:
+        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
+        ANDROID_NDK: /tmp/android-ndk-r23c
+      timeout-minutes: 120
+      run: |
+        echo "=== STARTING APK BUILD ==="
+        echo "Current directory: $(pwd)"
+        echo "Files:"
+        ls -la
+        
+        # Проверяем buildozer.spec
+        if [ ! -f "buildozer.spec" ]; then
+          echo "❌ buildozer.spec not found!"
+          exit 1
+        fi
+        
+        echo "=== Buildozer.spec content ==="
+        head -20 buildozer.spec
+        
+        # Запускаем сборку APK
+        echo "=== Running: buildozer -v android debug ==="
+        
+        # Запускаем сборку с перенаправлением вывода в файл
+        buildozer -v android debug 2>&1 | tee full_build.log &
+        BUILD_PID=$!
+        
+        # Мониторим процесс
+        for i in {1..120}; do
+          if ps -p $BUILD_PID > /dev/null; then
+            echo "Build in progress... minute $i"
+            
+            # Показываем последние строки лога
+            tail -5 full_build.log
+            
+            # Проверяем наличие APK
+            if find . -name "*.apk" 2>/dev/null | grep -q .; then
+              echo "✅ APK found during build!"
+              find . -name "*.apk" -type f | head -3
+            fi
+            
+            sleep 60
+          else
+            wait $BUILD_PID
+            BUILD_EXIT=$?
+            echo "Build process finished with exit code: $BUILD_EXIT"
+            break
+          fi
+        done
+        
+        # Если процесс еще работает, убиваем его
+        if ps -p $BUILD_PID > /dev/null; then
+          echo "Build timed out, killing process..."
+          kill -9 $BUILD_PID
+        fi
         
         # Проверяем результат
-        echo "=== Checking for APK ==="
+        echo "=== BUILD RESULT CHECK ==="
+        
         if find bin/ -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "✅ APK found in bin/"
+          echo "🎉 SUCCESS: APK found in bin/"
           ls -la bin/*.apk
-          APK_FILE=$(find bin/ -name "*.apk" -type f | head -1)
-          echo "APK path: $APK_FILE"
-          echo "APK size: $(du -h "$APK_FILE" | cut -f1)"
-        else
-          echo "❌ No APK found in bin/"
-          echo "Searching in all directories..."
-          find . -name "*.apk" -type f 2>/dev/null | while read file; do
-            echo "Found: $file"
-            ls -la "$file"
-          done
           
-          # Если все равно не нашли
-          if ! find . -name "*.apk" -type f 2>/dev/null | grep -q .; then
-            echo "❌ No APK found anywhere"
-            echo "Last 50 lines of buildozer.log:"
-            tail -50 .buildozer/android/platform/build-*/buildozer.log 2>/dev/null || echo "No log file found"
-            exit 1
-          fi
+          # Копируем все APK в одну директорию
+          mkdir -p output_apks
+          find . -name "*.apk" -type f -exec cp {} output_apks/ \;
+          
+          echo "All APKs in output_apks/:"
+          ls -la output_apks/
+          
+        elif find . -name "*.apk" 2>/dev/null | grep -q .; then
+          echo "⚠️  APK found outside bin/"
+          find . -name "*.apk" -type f -exec ls -la {} \;
+          
+          # Копируем в bin/
+          mkdir -p bin
+          find . -name "*.apk" -type f -exec cp {} bin/ \;
+          
+        else
+          echo "❌ NO APK FOUND"
+          echo "Last 100 lines of build log:"
+          tail -100 full_build.log
+          
+          echo "Looking for error logs..."
+          find . -name "*.log" -type f | head -5 | xargs -I {} sh -c 'echo "=== {} ==="; tail -50 {}'
+          
+          exit 1
         fi
 
     - name: Upload APK artifact
@@ -151,13 +230,25 @@ jobs:
       with:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
+        if-no-files-found: error
         retention-days: 7
 
-    - name: Upload build logs on failure
-      if: failure()
+    - name: Upload all APKs
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: All-APKs
+        path: artem_mobile_flet/output_apks/*.apk
+        if-no-files-found: ignore
+        retention-days: 7
+
+    - name: Upload build logs
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: Build-Logs
         path: |
+          artem_mobile_flet/full_build.log
           artem_mobile_flet/.buildozer/**/*.log
+        if-no-files-found: ignore
         retention-days: 3
