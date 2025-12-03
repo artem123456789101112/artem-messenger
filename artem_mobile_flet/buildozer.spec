@@ -3,7 +3,7 @@ title = ARTEM Messenger
 package.name = artem.messenger
 package.domain = org.artem
 source.dir = .
-version = 1.0.0
+version = 1.0
 requirements = python3,flet==0.21.2
 orientation = portrait
 android.api = 33

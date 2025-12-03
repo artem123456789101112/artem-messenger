@@ -1,111 +1,39 @@
-﻿name: "Build ARTEM Messenger APK with Docker"
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-
+﻿name: Build APK
+on: workflow_dispatch
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-
+    timeout-minutes: 180
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Create buildozer.spec
-      working-directory: ./artem_mobile_flet
-      run: |
-        echo "[app]" > buildozer.spec
-        echo "title = ARTEM Messenger" >> buildozer.spec
-        echo "package.name = artem.messenger" >> buildozer.spec
-        echo "package.domain = org.artem" >> buildozer.spec
-        echo "source.dir = ." >> buildozer.spec
-        echo "version = 1.0.0" >> buildozer.spec
-        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
-        echo "orientation = portrait" >> buildozer.spec
-        echo "android.api = 33" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.accept_sdk_license = true" >> buildozer.spec
-        
-        echo "" >> buildozer.spec
-        echo "[buildozer]" >> buildozer.spec
-        echo "log_level = 2" >> buildozer.spec
-        
-        echo "=== buildozer.spec created ==="
-        cat buildozer.spec
-
-    - name: Build APK using Docker
-      working-directory: ./artem_mobile_flet
-      run: |
-        echo "=== Building with Docker ==="
-        
-        # Создаем Dockerfile
-        cat > Dockerfile << DOCKERFILE
-FROM ubuntu:22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Устанавливаем зависимости
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    python3-dev \
-    openjdk-17-jdk \
-    git \
-    zip \
-    unzip \
-    libffi-dev \
-    libssl-dev \
-    autoconf \
-    automake \
-    libtool \
-    pkg-config \
-    wget \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Устанавливаем Buildozer и Flet
-RUN pip3 install --upgrade pip setuptools wheel
-RUN pip3 install buildozer flet==0.21.2
-
-# Копируем исходный код
-WORKDIR /app
-COPY . .
-
-# Принимаем Android лицензии
-RUN mkdir -p /root/.android
-RUN touch /root/.android/repositories.cfg
-RUN yes | /usr/lib/android-sdk/tools/bin/sdkmanager --licenses 2>/dev/null || true
-
-# Собираем APK
-CMD ["buildozer", "-v", "android", "debug"]
-DOCKERFILE
-
-        # Собираем и запускаем Docker контейнер
-        docker build -t artem-builder .
-        
-        # Запускаем сборку
-        docker run --rm \
-          -v $(pwd):/app \
-          -v $HOME/.buildozer:/root/.buildozer \
-          artem-builder
-        
-        echo "=== Checking for APK ==="
-        if ls bin/*.apk 1>/dev/null 2>&1; then
-          echo "✅ APK found!"
-          ls -la bin/*.apk
-        else
-          echo "❌ No APK in bin/, searching..."
-          find . -name "*.apk" -type f 2>/dev/null | head -5
-        fi
-
-    - name: Upload APK artifact
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: ARTEM-Messenger-APK
-        path: artem_mobile_flet/bin/*.apk
-        retention-days: 7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: |
+          sudo apt update
+          sudo apt install -y python3-pip python3-dev openjdk-17-jdk git zip unzip
+          pip install buildozer flet==0.21.2
+      - working-directory: ./artem_mobile_flet
+        run: |
+          echo "[app]" > buildozer.spec
+          echo "title = ARTEM Messenger" >> buildozer.spec
+          echo "package.name = artem.messenger" >> buildozer.spec
+          echo "package.domain = org.artem" >> buildozer.spec
+          echo "source.dir = ." >> buildozer.spec
+          echo "version = 1.0" >> buildozer.spec
+          echo "requirements = python3,flet==0.21.2" >> buildozer.spec
+          echo "orientation = portrait" >> buildozer.spec
+          echo "android.api = 33" >> buildozer.spec
+          echo "android.minapi = 21" >> buildozer.spec
+          echo "android.accept_sdk_license = true" >> buildozer.spec
+          echo "" >> buildozer.spec
+          echo "[buildozer]" >> buildozer.spec
+          echo "log_level = 2" >> buildozer.spec
+      - working-directory: ./artem_mobile_flet
+        run: |
+          echo "Starting build..."
+          buildozer android debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK
+          path: artem_mobile_flet/bin/*.apk
