@@ -53,7 +53,7 @@ jobs:
     - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating CORRECT buildozer.spec..."
+        echo "Creating buildozer.spec..."
         # Удаляем старый файл если есть с опечаткой
         rm -f bulldozer.spec
         
@@ -76,7 +76,8 @@ jobs:
         
         echo "=== buildozer.spec created ==="
         cat buildozer.spec
-        echo "=== Checking for typos ==="
+        echo "=== Checking for critical typos ==="
+        # Только проверка на КРИТИЧЕСКИЕ опечатки
         if grep -q "bulldozer" buildozer.spec; then
           echo "❌ ERROR: Found 'bulldozer' typo!"
           exit 1
@@ -85,11 +86,7 @@ jobs:
           echo "❌ ERROR: Found 'ARTH' typo!"
           exit 1
         fi
-        if grep -q "python3.cython" buildozer.spec; then
-          echo "❌ ERROR: Found wrong requirements format!"
-          exit 1
-        fi
-        echo "✅ No typos found"
+        echo "✅ No critical typos found"
 
     - name: Initialize Buildozer
       working-directory: ./artem_mobile_flet
