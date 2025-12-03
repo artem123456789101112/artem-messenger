@@ -39,7 +39,7 @@ jobs:
         echo "=== Python ==="
         python --version
         echo "=== Cython ==="
-        python -c "import cython; print(f'\Cython OK: {cython.__version__}')"
+        python -c "import cython; print(f'Cython OK: {cython.__version__}')"
         echo "=== Buildozer ==="
         buildozer --version
         
@@ -57,8 +57,7 @@ orientation = portrait
 android.api = 33
 android.minapi = 21
 android.accept_sdk_license = true
-android.ndk = 25b
-" > buildozer.spec
+android.ndk = 25b" > buildozer.spec
         
     - name: Build APK with Buildozer
       working-directory: ./artem_mobile_flet
