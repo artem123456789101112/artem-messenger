@@ -1,0 +1,74 @@
+﻿name: "CI - Build ARTEM Messenger APK"
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-pip python3-venv python3-dev \
+          openjdk-17-jdk \
+          cython3 cython \
+          zlib1g-dev libncurses5-dev \
+          libffi-dev libssl-dev \
+          git zip unzip autoconf automake libtool pkg-config
+        
+    - name: Install Python packages
+      run: |
+        python -m pip install --upgrade pip
+        pip install buildozer cython==3.0.0
+        
+    - name: Verify installations
+      run: |
+        echo "=== Python ==="
+        python --version
+        echo "=== Cython ==="
+        python -c "import cython; print(f'\Cython OK: {cython.__version__}')"
+        echo "=== Buildozer ==="
+        buildozer --version
+        
+    - name: Create buildozer.spec
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = artem
+source.dir = .
+version = 1.0.0
+requirements = python3,cython,flet
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.accept_sdk_license = true
+android.ndk = 25b
+" > buildozer.spec
+        
+    - name: Build APK with Buildozer
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "=== Starting build... ==="
+        buildozer -v android debug
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ARTEM-Messenger-APK
+        path: artem_mobile_flet/bin/*.apk
+        retention-days: 7

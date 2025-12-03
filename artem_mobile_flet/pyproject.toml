@@ -1,0 +1,13 @@
+[build-system]
+requires = ["buildozer"]
+
+[tool.buildozer]
+title = "ARTEM Messenger"
+package.name = "artem.messenger"
+package.domain = "artem"
+source.dir = "."
+version = "1.0"
+requirements = ["python3", "flet"]
+orientation = "portrait"
+android.api = 33
+android.minapi = 21

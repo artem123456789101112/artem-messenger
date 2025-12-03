@@ -1,0 +1,78 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>LAUNCH BUILD NOW</title>
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            padding: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 30px;
+        }
+        .btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 20px 50px;
+            font-size: 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 20px;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #218838;
+            transform: scale(1.05);
+        }
+        .instructions {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 30px auto;
+            max-width: 600px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 LAUNCH ARTEM MESSENGER BUILD</h1>
+    
+    <button class="btn" onclick="launch1()">🔥 ЗАПУСТИТЬ PYTHON CREATE SPEC</button>
+    <br>
+    <button class="btn" onclick="launch2()">💥 ЗАПУСТИТЬ RADICAL NO FILE</button>
+    
+    <div class="instructions">
+        <h3>После открытия:</h3>
+        <ol>
+            <li>Найди workflow в списке слева</li>
+            <li>Нажми на него</li>
+            <li>Нажми кнопку "Run workflow"</li>
+            <li>Ещё раз "Run workflow"</li>
+            <li>Жди 20 минут</li>
+            <li>Скачай APK из Artifacts</li>
+        </ol>
+    </div>
+    
+    <script>
+    function launch1() {
+        window.open('https://github.com/artem123456789101112/artem-messenger/actions/workflows/build.yml', '_blank');
+        setTimeout(() => alert('Нажми "Run workflow"!'), 1000);
+    }
+    
+    function launch2() {
+        window.open('https://github.com/artem123456789101112/artem-messenger/actions/workflows/radical.yml', '_blank');
+        setTimeout(() => alert('Нажми "Run workflow"!'), 1000);
+    }
+    
+    // Автооткрытие
+    window.onload = function() {
+        setTimeout(launch1, 500);
+    };
+    </script>
+</body>
+</html>

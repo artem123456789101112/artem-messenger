@@ -1,0 +1,9 @@
+﻿# Build files
+artem_mobile_flet/build/
+artem_mobile_flet/bin/
+artem_mobile_flet/.buildozer/
+*.apk
+*.apks
+__pycache__/
+*.pyc
+venv/

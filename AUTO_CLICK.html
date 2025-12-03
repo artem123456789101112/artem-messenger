@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Click Workflow</title>
+    <style>
+        body {
+            font-family: Arial;
+            padding: 50px;
+            text-align: center;
+            background: #f0f0f0;
+        }
+        .status {
+            padding: 20px;
+            margin: 20px;
+            border-radius: 10px;
+            font-size: 1.2em;
+        }
+        .running { background: #d4edda; color: #155724; }
+        .waiting { background: #fff3cd; color: #856404; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Auto-Launch Workflow</h1>
+    
+    <div id="status" class="status waiting">Waiting to launch...</div>
+    
+    <button onclick="manualLaunch()" style="padding: 15px 30px; font-size: 18px; margin: 20px;">
+        🔥 MANUAL LAUNCH
+    </button>
+    
+    <script>
+    let attempt = 1;
+    
+    function updateStatus(msg, type) {
+        const status = document.getElementById('status');
+        status.textContent = msg;
+        status.className = 'status ' + type;
+    }
+    
+    function manualLaunch() {
+        // Open the workflow page
+        window.open('https://github.com/artem123456789101112/artem-messenger/actions/workflows/build.yml', '_blank');
+        updateStatus('Opened workflow page. Click "Run workflow" button!', 'running');
+    }
+    
+    function autoLaunch() {
+        updateStatus(`Attempt ${attempt}: Opening workflow page...`, 'waiting');
+        
+        // Open in new tab
+        const newWindow = window.open('https://github.com/artem123456789101112/artem-messenger/actions/workflows/build.yml', '_blank');
+        
+        // Give time to load
+        setTimeout(() => {
+            updateStatus('Page should be loaded. Look for "Run workflow" button!', 'running');
+            
+            // Instructions
+            alert('INSTRUCTIONS:\n\n1. Find the GREEN "Run workflow" button\n2. Click it\n3. Click "Run workflow" again\n4. Wait 20 minutes\n5. Download APK from Artifacts');
+            
+        }, 3000);
+        
+        attempt++;
+    }
+    
+    // Auto-launch after 3 seconds
+    setTimeout(autoLaunch, 3000);
+    
+    // Also try the minimal.yml workflow after 10 seconds
+    setTimeout(() => {
+        window.open('https://github.com/artem123456789101112/artem-messenger/actions/workflows/minimal.yml', '_blank');
+        updateStatus('Also opened minimal.yml workflow as backup', 'running');
+    }, 10000);
+    </script>
+</body>
+</html>
