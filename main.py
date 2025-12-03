@@ -1669,7 +1669,3 @@ if __name__ == "__main__":
     print("=" * 60)
     
     ft.app(target=main)
-    
-
-    ft.app(target=main)
-
