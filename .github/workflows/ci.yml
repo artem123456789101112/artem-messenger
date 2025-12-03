@@ -18,117 +18,59 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          python3-pip \
-          python3-venv \
-          python3-dev \
-          openjdk-17-jdk \
-          cython3 \
-          git \
-          zip \
-          unzip \
-          libffi-dev \
-          libssl-dev \
-          libncurses5-dev \
-          zlib1g-dev \
-          autoconf \
-          automake \
-          libtool \
-          pkg-config \
-          curl
-
-    - name: Install Python packages
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
+        sudo apt-get install -y python3-pip python3-dev openjdk-17-jdk cython3 git zip unzip libffi-dev libssl-dev
         pip install buildozer cython flet==0.21.2
 
-    - name: Pre-create buildozer.spec with NDK 25b
+    - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating buildozer.spec with NDK 25b..."
+        # Создаем простой buildozer.spec через echo
+        echo "[app]" > buildozer.spec
+        echo "title = ARTEM Messenger" >> buildozer.spec
+        echo "package.name = artem.messenger" >> buildozer.spec
+        echo "package.domain = org.artem" >> buildozer.spec
+        echo "source.dir = ." >> buildozer.spec
+        echo "version = 1.0.0" >> buildozer.spec
+        echo "requirements = python3,cython,flet==0.21.2" >> buildozer.spec
+        echo "orientation = portrait" >> buildozer.spec
+        echo "android.api = 33" >> buildozer.spec
+        echo "android.minapi = 21" >> buildozer.spec
+        echo "android.accept_sdk_license = true" >> buildozer.spec
+        echo "android.ndk = 25b" >> buildozer.spec
+        echo "android.sdk = 33" >> buildozer.spec
+        echo "" >> buildozer.spec
+        echo "[buildozer]" >> buildozer.spec
+        echo "log_level = 2" >> buildozer.spec
+        echo "warn_on_root = 1" >> buildozer.spec
         
-        cat > buildozer.spec << "END"
-[app]
-title = ARTEM Messenger
-package.name = artem.messenger
-package.domain = org.artem
-source.dir = .
-version = 1.0.0
-requirements = python3,cython,flet==0.21.2
-orientation = portrait
-android.api = 33
-android.minapi = 21
-android.accept_sdk_license = true
-android.ndk = 25b
-android.sdk = 33
-
-[buildozer]
-log_level = 2
-warn_on_root = 1
-END
-        
-        echo "✅ buildozer.spec created"
+        echo "=== buildozer.spec created ==="
         cat buildozer.spec
 
-    - name: Build APK with Buildozer (auto-download NDK 25b)
+    - name: Build APK
       working-directory: ./artem_mobile_flet
-      continue-on-error: false
       timeout-minutes: 150
       run: |
-        echo "=== STARTING APK BUILD (Buildozer will download NDK 25b) ==="
+        echo "=== STARTING APK BUILD ==="
         echo "This will take 60-120 minutes for first build..."
         
-        # Запускаем сборку
-        echo "Step 1: Buildozer will download Android SDK and NDK 25b..."
-        echo "This may take 30-40 minutes..."
+        # Просто запускаем buildozer
+        buildozer -v android debug
         
-        # Запускаем сборку с подробным выводом
-        buildozer -v android debug 2>&1 | tee full_build.log
-        
-        echo "=== Checking for APK ==="
-        if find bin/ -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "🎉 SUCCESS: APK found!"
+        echo "=== Checking result ==="
+        if ls bin/*.apk 1>/dev/null 2>&1; then
+          echo "✅ SUCCESS: APK found!"
           ls -la bin/*.apk
-          echo "APK size: $(du -h bin/*.apk | cut -f1)"
-          
-          # Создаем удобную копию
-          mkdir -p output
-          cp bin/*.apk output/
-          
         else
-          echo "❌ No APK found in bin/"
-          echo "Searching in other directories..."
-          find . -name "*.apk" -type f 2>/dev/null | while read file; do
-            echo "Found APK: $file"
-            ls -la "$file"
-            # Копируем в bin/
-            mkdir -p bin
-            cp "$file" bin/
-          done
-          
-          if ! find . -name "*.apk" -type f 2>/dev/null | grep -q .; then
-            echo "❌ No APK found anywhere!"
-            echo "Last 100 lines of build log:"
-            tail -100 full_build.log
-            exit 1
-          fi
+          echo "❌ No APK in bin/, searching..."
+          find . -name "*.apk" -type f | head -5
         fi
 
-    - name: Upload APK artifact
+    - name: Upload APK
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
-        retention-days: 7
-
-    - name: Upload build logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build-Logs
-        path: artem_mobile_flet/full_build.log
-        retention-days: 3
