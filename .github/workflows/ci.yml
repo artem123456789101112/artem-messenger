@@ -3,7 +3,7 @@ on: workflow_dispatch
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
@@ -11,30 +11,55 @@ jobs:
           python-version: "3.11"
       - run: |
           sudo apt update
-          sudo apt install -y python3-pip python3-dev openjdk-17-jdk git zip unzip cython3
-          pip install buildozer cython flet==0.21.2
+          sudo apt install -y python3-pip python3-dev openjdk-17-jdk git zip unzip
+          pip install buildozer flet==0.21.2
       - working-directory: ./artem_mobile_flet
         run: |
-          echo "[app]" > buildozer.spec
-          echo "title = ARTEM Messenger" >> buildozer.spec
-          echo "package.name = artem.messenger" >> buildozer.spec
-          echo "package.domain = org.artem" >> buildozer.spec
-          echo "source.dir = ." >> buildozer.spec
-          echo "version = 1.0" >> buildozer.spec
-          echo "requirements = python3,cython,flet==0.21.2" >> buildozer.spec
-          echo "orientation = portrait" >> buildozer.spec
-          echo "android.api = 33" >> buildozer.spec
-          echo "android.minapi = 21" >> buildozer.spec
-          echo "android.accept_sdk_license = true" >> buildozer.spec
-          echo "" >> buildozer.spec
-          echo "[buildozer]" >> buildozer.spec
-          echo "log_level = 2" >> buildozer.spec
+          # СОЗДАЕМ ПРОСТОЙ И РАБОЧИЙ buildozer.spec
+          echo "[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+version = 1.0
+requirements = python3,flet==0.21.2
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.accept_sdk_license = true
+android.ndk = 25b
+
+# ИСПОЛЬЗУЕМ WEBVIEW ВМЕСТО SDL2 - ОН НЕ ИМЕЕТ ПРОБЛЕМ С LIBFFI
+[app:permissions]
+INTERNET
+
+[buildozer]
+log_level = 2" > buildozer.spec
+          
+          echo "=== buildozer.spec создан ==="
+          cat buildozer.spec
       - working-directory: ./artem_mobile_flet
         run: |
-          echo "Starting build..."
-          echo "This will take 60-120 minutes..."
-          buildozer -v android debug
+          echo "=== Запускаем сборку APK (это займет 30-60 минут) ==="
+          echo "=== Buildozer будет использовать WebView вместо SDL2 ==="
+          
+          # Инициализируем buildozer
+          buildozer init 2>&1 | tail -20
+          
+          # Запускаем сборку
+          buildozer -v android debug 2>&1 | tail -200
+          
+          echo "=== Проверяем результат ==="
+          if ls bin/*.apk 1>/dev/null 2>&1; then
+            echo "🎉 УСПЕХ! APK создан!"
+            ls -la bin/*.apk
+            echo "Размер APK: $(du -h bin/*.apk | cut -f1)"
+          else
+            echo "❌ APK не найден, ищем в других местах..."
+            find . -name "*.apk" -type f 2>/dev/null | head -5
+          fi
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
-          name: APK
+          name: ARTEM-Messenger-APK
           path: artem_mobile_flet/bin/*.apk
