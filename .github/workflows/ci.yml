@@ -16,7 +16,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: "3.11"
 
     - name: Install system dependencies
       run: |
@@ -47,28 +47,26 @@ jobs:
         echo "=== Buildozer Version ==="
         buildozer --version
         echo "=== Cython Check ==="
-        python -c "import cython; print(f'Cython version: {cython.__version__}')"
+        python -c "import cython; print('Cython version: ' + cython.__version__)"
 
     - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating buildozer.spec..."
-        cat > buildozer.spec << "EOF"
-[app]
-title = ARTEM Messenger
-package.name = artem.messenger
-package.domain = org.artem
-source.dir = .
-version = 1.0.0
-requirements = python3,cython,flet
-orientation = portrait
-android.api = 33
-android.minapi = 21
-android.accept_sdk_license = true
-android.ndk = 25b
-[buildozer]
-log_level = 2
-EOF
+        echo "[app]" > buildozer.spec
+        echo "title = ARTEM Messenger" >> buildozer.spec
+        echo "package.name = artem.messenger" >> buildozer.spec
+        echo "package.domain = org.artem" >> buildozer.spec
+        echo "source.dir = ." >> buildozer.spec
+        echo "version = 1.0.0" >> buildozer.spec
+        echo "requirements = python3,cython,flet" >> buildozer.spec
+        echo "orientation = portrait" >> buildozer.spec
+        echo "android.api = 33" >> buildozer.spec
+        echo "android.minapi = 21" >> buildozer.spec
+        echo "android.accept_sdk_license = true" >> buildozer.spec
+        echo "android.ndk = 25b" >> buildozer.spec
+        echo "[buildozer]" >> buildozer.spec
+        echo "log_level = 2" >> buildozer.spec
+        
         echo "=== buildozer.spec created ==="
         cat buildozer.spec
 
@@ -77,15 +75,14 @@ EOF
       continue-on-error: false
       run: |
         echo "=== Starting Buildozer ==="
-        buildozer -v android debug 2>&1 | tee build.log
+        buildozer -v android debug
         
         echo "=== Checking for APK ==="
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK found!"
           ls -la bin/*.apk
         else
-          echo "❌ No APK found. Last 50 lines of log:"
-          tail -50 build.log
+          echo "❌ No APK found"
           exit 1
         fi
 
@@ -96,11 +93,3 @@ EOF
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
         retention-days: 7
-
-    - name: Upload build logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build-Logs
-        path: artem_mobile_flet/build.log
-        retention-days: 3
