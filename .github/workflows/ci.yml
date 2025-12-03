@@ -7,7 +7,7 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150  # Увеличиваем для скачивания NDK
 
     steps:
     - name: Checkout repository
@@ -18,7 +18,7 @@ jobs:
       with:
         python-version: "3.11"
 
-    - name: Install system dependencies
+    - name: Install ALL system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -33,103 +33,191 @@ jobs:
           libffi-dev \
           libssl-dev \
           libncurses5-dev \
-          zlib1g-dev
+          zlib1g-dev \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          wget \
+          curl \
+          make \
+          gcc \
+          g++ \
+          unzip \
+          file
 
     - name: Install Buildozer and Python dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip setuptools wheel
         pip install buildozer
         pip install cython
+        pip install flet
 
-    - name: Verify installations
+    - name: Setup Android SDK and NDK
       run: |
-        echo "=== Python Version ==="
-        python --version
-        echo "=== Buildozer Version ==="
-        buildozer --version
-        echo "=== Cython Check ==="
-        python -c "import cython; print('Cython version: ' + cython.__version__)"
+        echo "=== Setting up Android SDK/NDK ==="
+        
+        # Устанавливаем более старую NDK (r23c), которая стабильнее с libffi
+        wget https://dl.google.com/android/repository/android-ndk-r23c-linux.zip
+        unzip android-ndk-r23c-linux.zip -d /tmp/
+        export ANDROID_NDK_HOME=/tmp/android-ndk-r23c
+        export ANDROID_NDK_ROOT=/tmp/android-ndk-r23c
+        echo "ANDROID_NDK_HOME=/tmp/android-ndk-r23c" >> $GITHUB_ENV
+        
+        # Устанавливаем Android SDK командную строку
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        mkdir -p /tmp/android-sdk
+        unzip commandlinetools-linux-9477386_latest.zip -d /tmp/android-sdk
+        
+        export ANDROID_HOME=/tmp/android-sdk
+        export ANDROID_SDK_ROOT=/tmp/android-sdk
+        echo "ANDROID_HOME=/tmp/android-sdk" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=/tmp/android-sdk" >> $GITHUB_ENV
+        
+        # Принимаем лицензии
+        yes | /tmp/android-sdk/cmdline-tools/bin/sdkmanager --licenses
+        /tmp/android-sdk/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
 
-    - name: Create buildozer.spec
+    - name: Create buildozer.spec with stable NDK
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Creating buildozer.spec..."
-        # Удаляем старый файл если есть с опечаткой
-        rm -f bulldozer.spec
+        echo "Creating buildozer.spec with stable NDK..."
         
-        # Создаем новый ПРАВИЛЬНЫЙ файл
-        echo "[app]" > buildozer.spec
-        echo "title = ARTEM Messenger" >> buildozer.spec
-        echo "package.name = artem.messenger" >> buildozer.spec
-        echo "package.domain = org.artem" >> buildozer.spec
-        echo "source.dir = ." >> buildozer.spec
-        echo "version = 1.0.0" >> buildozer.spec
-        echo "requirements = python3,cython,flet" >> buildozer.spec
-        echo "orientation = portrait" >> buildozer.spec
-        echo "android.api = 33" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.accept_sdk_license = true" >> buildozer.spec
-        echo "android.ndk = 25b" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "[buildozer]" >> buildozer.spec
-        echo "log_level = 2" >> buildozer.spec
+        rm -f buildozer.spec
+        
+        cat > buildozer.spec << "EOF"
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+version = 1.0.0
+requirements = python3,cython,flet==0.21.2
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.accept_sdk_license = true
+android.ndk = 23c
+android.sdk = 33
+p4a.branch = master
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
         
         echo "=== buildozer.spec created ==="
         cat buildozer.spec
-        echo "=== Checking for critical typos ==="
-        # Только проверка на КРИТИЧЕСКИЕ опечатки
-        if grep -q "bulldozer" buildozer.spec; then
-          echo "❌ ERROR: Found 'bulldozer' typo!"
-          exit 1
-        fi
-        if grep -q "ARTH" buildozer.spec; then
-          echo "❌ ERROR: Found 'ARTH' typo!"
-          exit 1
-        fi
-        echo "✅ No critical typos found"
 
-    - name: Initialize Buildozer
+    - name: Patch libffi build for Android
       working-directory: ./artem_mobile_flet
       run: |
-        echo "=== Initializing Buildozer ==="
-        buildozer init 2>&1 | tail -20
-        echo "=== Buildozer initialized ==="
+        echo "=== Patching libffi build issues ==="
+        
+        # Создаем патч для обхода проблемы с autoconf
+        cat > patch_ndk_build.sh << "EOF"
+#!/bin/bash
+# Этот патч исправляет проблему с устаревшими макросами autoconf в NDK
+        
+# Ищем директорию buildozer
+if [ -d ".buildozer" ]; then
+    echo "Found .buildozer directory"
+    
+    # Ищем файлы configure.ac в libffi
+    find .buildozer -name "configure.ac" -type f | while read file; do
+        echo "Patching $file"
+        
+        # Патч для макросов autoconf
+        sed -i 's/AC_PROG_LD/AC_PROG_LD\nAC_PROG_LD_GNU/' "$file" 2>/dev/null || true
+        sed -i 's/AC_TRY_RUN/AC_RUN_IFELSE/' "$file" 2>/dev/null || true
+        sed -i 's/AC_TRY_LINK/AC_LINK_IFELSE/' "$file" 2>/dev/null || true
+        
+        # Добавляем недостающий макрос
+        if ! grep -q "LT_SYS_SYMBOL_USCORE" "$file"; then
+            echo "m4_ifdef([LT_SYS_SYMBOL_USCORE], [LT_SYS_SYMBOL_USCORE])" >> "$file"
+        fi
+    done
+    
+    # Также патчим aclocal.m4 если есть
+    find .buildozer -name "aclocal.m4" -type f | while read file; do
+        echo "Patching $file"
+        sed -i 's/AC_PROG_LD/AC_PROG_LD\nAC_PROG_LD_GNU/' "$file" 2>/dev/null || true
+    done
+fi
 
-    - name: Build APK with Buildozer
+# Альтернативное решение: использовать более новую версию libffi
+echo "Setting up alternative libffi build..."
+EOF
+        
+        chmod +x patch_ndk_build.sh
+        ./patch_ndk_build.sh
+
+    - name: Initialize Buildozer with custom env
       working-directory: ./artem_mobile_flet
+      env:
+        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
+        ANDROID_HOME: /tmp/android-sdk
+        ANDROID_SDK_ROOT: /tmp/android-sdk
+      run: |
+        echo "=== Initializing Buildozer with custom NDK ==="
+        echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        
+        # Инициализируем buildozer
+        buildozer init 2>&1 | tail -30
+        
+        # Проверяем конфигурацию
+        echo "=== Buildozer configuration ==="
+        buildozer android status 2>&1 | head -50
+
+    - name: Build APK with Buildozer (with retry)
+      working-directory: ./artem_mobile_flet
+      env:
+        ANDROID_NDK_HOME: /tmp/android-ndk-r23c
+        ANDROID_HOME: /tmp/android-sdk
+        ANDROID_SDK_ROOT: /tmp/android-sdk
       continue-on-error: false
-      timeout-minutes: 90
+      timeout-minutes: 100
       run: |
         echo "=== Starting Buildozer APK build ==="
-        echo "Current directory: $(pwd)"
-        echo "Files in directory:"
-        ls -la
         
-        if [ -f "buildozer.spec" ]; then
-          echo "✅ buildozer.spec exists"
-          echo "First few lines of buildozer.spec:"
-          head -20 buildozer.spec
+        # Первая попытка сборки
+        echo "Attempt 1: Building APK..."
+        if buildozer -v android debug 2>&1 | tee build.log; then
+            echo "✅ Build successful on first attempt!"
         else
-          echo "❌ buildozer.spec NOT found!"
-          exit 1
+            echo "⚠️  First build attempt failed, trying alternative approach..."
+            
+            # Пробуем альтернативный метод с чисткой
+            buildozer android clean 2>&1 | tail -20
+            
+            # Пробуем снова с другим лог уровнем
+            echo "Attempt 2: Retrying with different settings..."
+            buildozer -v android debug 2>&1 | tee build_retry.log
+            
+            if [ $? -ne 0 ]; then
+                echo "❌ Build failed. Showing last 100 lines of log:"
+                tail -100 build_retry.log
+                exit 1
+            fi
         fi
         
-        # Запускаем сборку
-        echo "=== Running buildozer ==="
-        buildozer -v android debug
-        
         echo "=== Checking for APK ==="
-        if find bin/ -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "✅ APK found in bin/"
-          ls -la bin/*.apk
-        elif find . -name "*.apk" 2>/dev/null | grep -q .; then
-          echo "✅ APK found somewhere"
-          find . -name "*.apk" -type f | xargs ls -la
+        if find . -name "*.apk" 2>/dev/null | grep -q .; then
+            echo "✅ APK found!"
+            find . -name "*.apk" -type f -exec ls -la {} \;
+            
+            # Копируем APK в bin/ если его там нет
+            mkdir -p bin/
+            find . -name "*.apk" -type f -exec cp {} bin/ \;
+            
+            echo "APKs in bin/:"
+            ls -la bin/*.apk 2>/dev/null || echo "No APKs in bin/"
         else
-          echo "❌ No APK found"
-          echo "Looking for logs..."
-          find . -name "*.log" -type f | head -5 | xargs -I {} sh -c 'echo "=== {} ==="; tail -50 {}'
-          exit 1
+            echo "❌ No APK found"
+            echo "Build logs:"
+            find . -name "*.log" -type f | head -5 | xargs -I {} sh -c 'echo "=== {} ==="; tail -50 {}'
+            exit 1
         fi
 
     - name: Upload APK artifact
@@ -139,3 +227,14 @@ jobs:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
         retention-days: 7
+
+    - name: Upload build logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Logs
+        path: |
+          artem_mobile_flet/build.log
+          artem_mobile_flet/build_retry.log
+          artem_mobile_flet/.buildozer/**/*.log
+        retention-days: 3
