@@ -11,8 +11,8 @@ jobs:
           python-version: "3.11"
       - run: |
           sudo apt update
-          sudo apt install -y python3-pip python3-dev openjdk-17-jdk git zip unzip
-          pip install buildozer flet==0.21.2
+          sudo apt install -y python3-pip python3-dev openjdk-17-jdk git zip unzip cython3
+          pip install buildozer cython flet==0.21.2
       - working-directory: ./artem_mobile_flet
         run: |
           echo "[app]" > buildozer.spec
@@ -21,7 +21,7 @@ jobs:
           echo "package.domain = org.artem" >> buildozer.spec
           echo "source.dir = ." >> buildozer.spec
           echo "version = 1.0" >> buildozer.spec
-          echo "requirements = python3,flet==0.21.2" >> buildozer.spec
+          echo "requirements = python3,cython,flet==0.21.2" >> buildozer.spec
           echo "orientation = portrait" >> buildozer.spec
           echo "android.api = 33" >> buildozer.spec
           echo "android.minapi = 21" >> buildozer.spec
@@ -32,7 +32,8 @@ jobs:
       - working-directory: ./artem_mobile_flet
         run: |
           echo "Starting build..."
-          buildozer android debug
+          echo "This will take 60-120 minutes..."
+          buildozer -v android debug
       - uses: actions/upload-artifact@v4
         with:
           name: APK
