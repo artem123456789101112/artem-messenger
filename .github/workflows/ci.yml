@@ -13,7 +13,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
         python-version: "3.11"
@@ -27,17 +27,19 @@ jobs:
           python3-dev \
           openjdk-17-jdk \
           cython3 \
-          cython \
           git \
           zip \
           unzip \
           libffi-dev \
-          libssl-dev
+          libssl-dev \
+          libncurses5-dev \
+          zlib1g-dev
 
-    - name: Install Buildozer and dependencies
+    - name: Install Buildozer and Python dependencies
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install buildozer
+        # Устанавливаем Cython через pip, так как в Ubuntu 24.04 только cython3
         pip install cython
 
     - name: Verify installations
@@ -45,7 +47,7 @@ jobs:
         echo "=== Python Version ==="
         python --version
         echo "=== Buildozer Version ==="
-        buildozer --version
+        buildozer --version || echo "Buildozer not in PATH, will be installed by pip"
         echo "=== Cython Check ==="
         python -c "import cython; print('Cython version: ' + cython.__version__)"
 
@@ -64,25 +66,37 @@ jobs:
         echo "android.minapi = 21" >> buildozer.spec
         echo "android.accept_sdk_license = true" >> buildozer.spec
         echo "android.ndk = 25b" >> buildozer.spec
+        echo "" >> buildozer.spec
         echo "[buildozer]" >> buildozer.spec
         echo "log_level = 2" >> buildozer.spec
         
         echo "=== buildozer.spec created ==="
         cat buildozer.spec
 
+    - name: Initialize Buildozer (first time setup)
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "=== Initializing Buildozer ==="
+        # Эта команда скачает Android SDK и другие зависимости
+        buildozer init 2>&1 | tail -20
+        echo "=== Buildozer initialized ==="
+
     - name: Build APK with Buildozer
       working-directory: ./artem_mobile_flet
       continue-on-error: false
+      timeout-minutes: 90
       run: |
-        echo "=== Starting Buildozer ==="
-        buildozer -v android debug
+        echo "=== Starting Buildozer APK build ==="
+        # Запускаем сборку с подробным выводом
+        buildozer -v android debug 2>&1 | tail -100
         
         echo "=== Checking for APK ==="
-        if ls bin/*.apk 1> /dev/null 2>&1; then
+        if find . -name "*.apk" 2>/dev/null | grep -q .; then
           echo "✅ APK found!"
-          ls -la bin/*.apk
+          find . -name "*.apk" -type f | xargs ls -la
         else
-          echo "❌ No APK found"
+          echo "❌ No APK found. Searching for build artifacts..."
+          find . -type f -name "*.log" | head -5 | xargs tail -20
           exit 1
         fi
 
@@ -93,3 +107,13 @@ jobs:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
         retention-days: 7
+
+    - name: Upload build logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Logs
+        path: |
+          artem_mobile_flet/buildozer.log
+          artem_mobile_flet/.buildozer/**/*.log
+        retention-days: 3
