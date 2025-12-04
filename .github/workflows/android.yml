@@ -1,0 +1,84 @@
+﻿name: Build Android APK
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: Install ALL dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y python3-pip python3-dev openjdk-17-jdk git wget unzip
+        sudo apt install -y cython cython3  # ОБЯЗАТЕЛЬНО!
+        sudo apt install -y autoconf automake libtool pkg-config
+        sudo apt install -y zlib1g-dev libncurses5-dev libffi-dev
+        sudo apt install -y libssl-dev libxml2-dev libxslt1-dev
+        pip install --upgrade pip
+        pip install buildozer cython flet==0.21.2
+        
+    - name: Create buildozer.spec
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "[app]" > buildozer.spec
+        echo "title = ARTEM Messenger" >> buildozer.spec
+        echo "package.name = artem.messenger" >> buildozer.spec
+        echo "package.domain = org.artem" >> buildozer.spec
+        echo "source.dir = ." >> buildozer.spec
+        echo "version = 1.0" >> buildozer.spec
+        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
+        echo "orientation = portrait" >> buildozer.spec
+        echo "android.api = 33" >> buildozer.spec
+        echo "android.minapi = 21" >> buildozer.spec
+        echo "android.accept_sdk_license = True" >> buildozer.spec
+        echo "" >> buildozer.spec
+        echo "[buildozer]" >> buildozer.spec
+        echo "log_level = 2" >> buildozer.spec
+        
+    - name: Build APK with Buildozer
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "=== Проверка Cython ==="
+        which cython
+        cython --version
+        
+        echo "=== Начинаем сборку APK ==="
+        echo "Это займет 60-120 минут..."
+        
+        # Запускаем сборку
+        buildozer android debug 2>&1 | tee build.log
+        
+        # Проверяем результат
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK успешно создан!"
+          echo "Список APK файлов:"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK не найден!"
+          echo "=== Последние 100 строк лога ==="
+          tail -100 build.log
+          exit 1
+        fi
+        
+    - name: Upload APK
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ARTEM-Messenger-APK
+        path: artem_mobile_flet/bin/*.apk
+        
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Logs
+        path: artem_mobile_flet/build.log
