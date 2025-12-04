@@ -62,41 +62,36 @@ jobs:
       run: |
         mkdir -p ~/.android
         touch ~/.android/repositories.cfg
-        
-        # Accept licenses
         yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
     
     - name: Configure Buildozer
       working-directory: ./artem_mobile_flet
       run: |
-        # Create proper buildozer.spec
-        cat > buildozer.spec << 'EOF'
-[app]
-title = ARTEM Messenger
-package.name = artem.messenger
-package.domain = org.artem
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-version = 1.0
-requirements = python3,flet==0.21.2
-orientation = portrait
-fullscreen = 0
-
-# Android configurations
-android.api = 33
-android.minapi = 21
-android.sdk = 33
-android.ndk = 25b
-android.ndk_path = /tmp/android-ndk-r25b
-android.sdk_path = /usr/local/lib/android/sdk
-android.accept_sdk_license = True
-android.arch = arm64-v8a
-
-# Buildozer settings
-[buildozer]
-log_level = 2
-warn_on_root = 1
-EOF
+        echo "[app]" > buildozer.spec
+        echo "title = ARTEM Messenger" >> buildozer.spec
+        echo "package.name = artem.messenger" >> buildozer.spec
+        echo "package.domain = org.artem" >> buildozer.spec
+        echo "source.dir = ." >> buildozer.spec
+        echo "source.include_exts = py,png,jpg,kv,atlas" >> buildozer.spec
+        echo "version = 1.0" >> buildozer.spec
+        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
+        echo "orientation = portrait" >> buildozer.spec
+        echo "fullscreen = 0" >> buildozer.spec
+        echo "" >> buildozer.spec
+        echo "# Android configurations" >> buildozer.spec
+        echo "android.api = 33" >> buildozer.spec
+        echo "android.minapi = 21" >> buildozer.spec
+        echo "android.sdk = 33" >> buildozer.spec
+        echo "android.ndk = 25b" >> buildozer.spec
+        echo "android.ndk_path = /tmp/android-ndk-r25b" >> buildozer.spec
+        echo "android.sdk_path = /usr/local/lib/android/sdk" >> buildozer.spec
+        echo "android.accept_sdk_license = True" >> buildozer.spec
+        echo "android.arch = arm64-v8a" >> buildozer.spec
+        echo "" >> buildozer.spec
+        echo "# Buildozer settings" >> buildozer.spec
+        echo "[buildozer]" >> buildozer.spec
+        echo "log_level = 2" >> buildozer.spec
+        echo "warn_on_root = 1" >> buildozer.spec
         
         echo "=== Buildozer spec created ==="
         cat buildozer.spec
@@ -111,18 +106,11 @@ EOF
       run: |
         echo "Starting APK build with NDK 25b..."
         echo "This will take 60-120 minutes..."
-        
-        # Clean first
         buildozer android clean 2>&1 | tee clean.log
-        
-        # Build with verbose output
-        echo "=== Starting buildozer ==="
         buildozer -v android debug 2>&1 | tee build.log
         
-        # Check for APK
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK build successful!"
-          echo "APK files:"
           ls -la bin/*.apk
         else
           echo "❌ APK not found!"
