@@ -1,61 +1,160 @@
-﻿name: Build APK
+﻿name: Build Android APK
 on: workflow_dispatch
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
       
-    - uses: actions/setup-python@v4
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
         python-version: "3.11"
         
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt update
-        sudo apt install -y python3-pip openjdk-17-jdk git wget unzip
-        pip install buildozer cython flet==0.21.2
+        sudo apt install -y python3-pip python3-dev openjdk-17-jdk git wget unzip zip
+        sudo apt install -y autoconf automake libtool pkg-config
+        sudo apt install -y zlib1g-dev libncurses5-dev
         
-    - name: Prepare build environment
+    - name: Install Python dependencies
       run: |
+        pip install --upgrade pip setuptools wheel
+        pip install buildozer cython==0.29.36 flet==0.21.2
+        
+    - name: Download Android NDK 25b
+      run: |
+        echo "Downloading NDK 25b..."
         wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
         unzip -q android-ndk-r25b-linux.zip
         export ANDROID_NDK_HOME=$(pwd)/android-ndk-r25b
+        echo "NDK downloaded to: $(pwd)/android-ndk-r25b"
         
+    - name: Setup Android SDK correctly
+      run: |
+        echo "Setting up Android SDK..."
+        
+        # Скачиваем command line tools
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        
+        # Создаем правильную структуру папок
         mkdir -p android-sdk
         unzip -q commandlinetools-linux-11076708_latest.zip -d android-sdk
-        mv android-sdk/cmdline-tools android-sdk/latest
-        export ANDROID_HOME=$(pwd)/android-sdk
+        rm commandlinetools-linux-11076708_latest.zip
         
-        yes | $ANDROID_HOME/latest/bin/sdkmanager --licenses || true
-        $ANDROID_HOME/latest/bin/sdkmanager "platform-tools" "platforms;android-33"
+        # ПРАВИЛЬНАЯ СТРУКТУРА: android-sdk/cmdline-tools/latest/
+        mkdir -p android-sdk/cmdline-tools
+        mv android-sdk/cmdline-tools android-sdk/cmdline-tools/latest 2>/dev/null || true
+        
+        # Устанавливаем переменные окружения
+        export ANDROID_HOME=$(pwd)/android-sdk
+        export ANDROID_SDK_ROOT=$(pwd)/android-sdk
+        export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+        
+        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+        
+        # Принимаем лицензии
+        yes | sdkmanager --licenses --sdk_root=$ANDROID_HOME
+        
+        # Устанавливаем необходимые компоненты
+        sdkmanager --sdk_root=$ANDROID_HOME "platform-tools"
+        sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-33"
+        sdkmanager --sdk_root=$ANDROID_HOME "build-tools;33.0.0"
+        
+        echo "=== Android SDK структура ==="
+        ls -la $ANDROID_HOME/
         
     - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "[app]" > buildozer.spec
-        echo "title = ARTEM Messenger" >> buildozer.spec
-        echo "package.name = artem.messenger" >> buildozer.spec
-        echo "package.domain = org.artem" >> buildozer.spec
-        echo "source.dir = ." >> buildozer.spec
-        echo "version = 1.0" >> buildozer.spec
-        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
-        echo "orientation = portrait" >> buildozer.spec
-        echo "android.api = 33" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.accept_sdk_license = True" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "[buildozer]" >> buildozer.spec
-        echo "log_level = 2" >> buildozer.spec
+        # Очищаем старые файлы
+        rm -f buildozer.spec
+        
+        # Создаем новый spec файл
+        cat > buildozer.spec << 'EOF'
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 1.0
+requirements = python3,flet==0.21.2
+orientation = portrait
+fullscreen = 0
+
+# Android configurations
+android.api = 33
+android.minapi = 21
+android.ndk = 25b
+android.ndk_path = /home/runner/work/artem-messenger/artem-messenger/android-ndk-r25b
+android.sdk_path = /home/runner/work/artem-messenger/artem-messenger/android-sdk
+android.accept_sdk_license = True
+android.archs = arm64-v8a
+
+# Permissions
+android.permissions = INTERNET, ACCESS_NETWORK_STATE
+
+# Buildozer settings
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
+        
+        echo "=== Buildozer spec создан ==="
+        cat buildozer.spec
+        
+    - name: Clean previous builds
+      working-directory: ./artem_mobile_flet
+      run: |
+        # Очищаем предыдущие сборки
+        rm -rf .buildozer bin
+        buildozer android clean 2>&1 | tail -20
         
     - name: Build APK
       working-directory: ./artem_mobile_flet
-      run: buildozer android debug
-      
-    - uses: actions/upload-artifact@v4
+      run: |
+        echo "Starting APK build..."
+        echo "This will take 60-120 minutes..."
+        
+        # Устанавливаем переменные для Buildozer
+        export ANDROID_NDK_HOME=/home/runner/work/artem-messenger/artem-messenger/android-ndk-r25b
+        export ANDROID_SDK_ROOT=/home/runner/work/artem-messenger/artem-messenger/android-sdk
+        
+        # Запускаем сборку с подробным логом
+        buildozer -v android debug 2>&1 | tee build.log
+        
+        # Проверяем результат
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK build successful!"
+          echo "APK files:"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK not found!"
+          echo "=== Последние 100 строк лога ==="
+          tail -100 build.log
+          exit 1
+        fi
+        
+    - name: Upload APK artifact
+      if: success()
+      uses: actions/upload-artifact@v4
       with:
-        name: APK
+        name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
+        retention-days: 7
+        
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Logs
+        path: artem_mobile_flet/build.log
+        retention-days: 3
