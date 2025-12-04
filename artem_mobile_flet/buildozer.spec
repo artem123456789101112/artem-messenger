@@ -8,7 +8,7 @@ requirements = python3,flet==0.21.2
 orientation = portrait
 android.api = 33
 android.minapi = 21
-android.ndk = 23c  # Используем старый NDK чтобы избежать libffi проблем
+android.ndk = 23c
 android.accept_sdk_license = True
 
 [buildozer]

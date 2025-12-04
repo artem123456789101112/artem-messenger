@@ -5,12 +5,12 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
     
     page.add(ft.Text("ARTEM Messenger", size=30, weight=ft.FontWeight.BOLD))
-    page.add(ft.Text("Libffi fix applied", size=20))
-    page.add(ft.Text("This should build now!", size=20, color=ft.colors.GREEN))
+    page.add(ft.Text("Simple build test", size=20))
+    page.add(ft.Text("Should work now!", size=20, color=ft.colors.GREEN))
     
-    def test_click(e):
-        page.add(ft.Text("Test passed! APK works!"))
+    def btn_click(e):
+        page.add(ft.Text("Button clicked!"))
 
-    page.add(ft.ElevatedButton("Test Button", on_click=test_click))
+    page.add(ft.ElevatedButton("Test Button", on_click=btn_click))
 
 ft.app(target=main)
