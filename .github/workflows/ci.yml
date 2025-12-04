@@ -29,14 +29,15 @@ jobs:
           openjdk-17-jdk \
           git wget unzip \
           autoconf automake libtool pkg-config \
-          zlib1g-dev libncurses5-dev
+          zlib1g-dev libncurses5-dev \
+          libtinfo5 libsqlite3-dev
     
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip setuptools wheel
         pip install buildozer cython flet==0.21.2
     
-    - name: Setup Android NDK 25b
+    - name: Setup Android NDK 25b and SDK tools
       run: |
         # Download NDK 25b (required by python-for-android)
         echo "Downloading NDK 25b..."
@@ -44,73 +45,86 @@ jobs:
         unzip -q android-ndk-r25b-linux.zip -d /tmp/
         rm android-ndk-r25b-linux.zip
         
-        # Set environment variables for NDK 25b
+        # Download and install Android Command Line Tools
+        echo "Downloading Android Command Line Tools..."
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        mkdir -p /tmp/android-cmdline-tools
+        unzip -q commandlinetools-linux-11076708_latest.zip -d /tmp/android-cmdline-tools
+        mv /tmp/android-cmdline-tools/cmdline-tools /tmp/android-cmdline-tools/latest
+        rm commandlinetools-linux-11076708_latest.zip
+        
+        # Set environment variables
         echo "ANDROID_NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
         echo "ANDROIDNDK=/tmp/android-ndk-r25b" >> $GITHUB_ENV
         echo "NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=/tmp/android-cmdline-tools" >> $GITHUB_ENV
+        echo "ANDROID_HOME=/tmp/android-cmdline-tools" >> $GITHUB_ENV
+        echo "PATH=/tmp/android-cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+        
+        # Accept licenses
+        yes | /tmp/android-cmdline-tools/latest/bin/sdkmanager --licenses || true
+        
+        # Install required SDK components
+        /tmp/android-cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
         
         # Create .buildozer directory and symlink NDK
         mkdir -p ~/.buildozer/android/platform
         ln -sf /tmp/android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
         
-        # Verify NDK
-        echo "=== NDK Setup ==="
-        ls -la /tmp/android-ndk-r25b
-        echo "NDK path: /tmp/android-ndk-r25b"
+        echo "=== Android Setup Complete ==="
+        echo "NDK: /tmp/android-ndk-r25b"
+        echo "SDK: /tmp/android-cmdline-tools"
     
-    - name: Accept Android SDK licenses
-      run: |
-        mkdir -p ~/.android
-        touch ~/.android/repositories.cfg
-        yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
-    
-    - name: Configure Buildozer
+    - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        echo "[app]" > buildozer.spec
-        echo "title = ARTEM Messenger" >> buildozer.spec
-        echo "package.name = artem.messenger" >> buildozer.spec
-        echo "package.domain = org.artem" >> buildozer.spec
-        echo "source.dir = ." >> buildozer.spec
-        echo "source.include_exts = py,png,jpg,kv,atlas" >> buildozer.spec
-        echo "version = 1.0" >> buildozer.spec
-        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
-        echo "orientation = portrait" >> buildozer.spec
-        echo "fullscreen = 0" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "# Android configurations" >> buildozer.spec
-        echo "android.api = 33" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.sdk = 33" >> buildozer.spec
-        echo "android.ndk = 25b" >> buildozer.spec
-        echo "android.ndk_path = /tmp/android-ndk-r25b" >> buildozer.spec
-        echo "android.sdk_path = /usr/local/lib/android/sdk" >> buildozer.spec
-        echo "android.accept_sdk_license = True" >> buildozer.spec
-        echo "android.arch = arm64-v8a" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "# Buildozer settings" >> buildozer.spec
-        echo "[buildozer]" >> buildozer.spec
-        echo "log_level = 2" >> buildozer.spec
-        echo "warn_on_root = 1" >> buildozer.spec
+        # Создаем правильный buildozer.spec без deprecated параметров
+        cat > buildozer.spec << 'EOF'
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 1.0
+requirements = python3,flet==0.21.2
+orientation = portrait
+fullscreen = 0
+
+# Android configurations
+android.api = 33
+android.minapi = 21
+android.ndk = 25b
+android.ndk_path = /tmp/android-ndk-r25b
+android.sdk_path = /tmp/android-cmdline-tools
+android.accept_sdk_license = True
+android.archs = arm64-v8a,armeabi-v7a
+
+# Permissions
+android.permissions = INTERNET, ACCESS_NETWORK_STATE
+
+# Buildozer settings
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
         
-        echo "=== Buildozer spec created ==="
+        echo "=== Buildozer spec ==="
         cat buildozer.spec
-    
-    - name: Clean Buildozer cache
-      run: |
-        rm -rf ~/.buildozer/cache
-        rm -rf ~/.gradle/caches
     
     - name: Build APK with Buildozer
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Starting APK build with NDK 25b..."
+        echo "Starting APK build..."
         echo "This will take 60-120 minutes..."
-        buildozer android clean 2>&1 | tee clean.log
+        
+        # Build with verbose output
         buildozer -v android debug 2>&1 | tee build.log
         
+        # Check for APK
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK build successful!"
+          echo "APK files:"
           ls -la bin/*.apk
         else
           echo "❌ APK not found!"
@@ -132,7 +146,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Build-Logs
-        path: |
-          artem_mobile_flet/build.log
-          artem_mobile_flet/clean.log
+        path: artem_mobile_flet/build.log
         retention-days: 3

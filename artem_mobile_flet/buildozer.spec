@@ -12,21 +12,16 @@ fullscreen = 0
 # Android configurations
 android.api = 33
 android.minapi = 21
-android.sdk = 33
 android.ndk = 25b
 android.ndk_path = /tmp/android-ndk-r25b
-android.sdk_path = /usr/local/lib/android/sdk
+android.sdk_path = /tmp/android-cmdline-tools
 android.accept_sdk_license = True
-android.arch = arm64-v8a
+android.archs = arm64-v8a,armeabi-v7a
+
+# Permissions
+android.permissions = INTERNET, ACCESS_NETWORK_STATE
 
 # Buildozer settings
 [buildozer]
 log_level = 2
 warn_on_root = 1
-
-# Permissions
-android.permissions = INTERNET, ACCESS_NETWORK_STATE
-
-# Presplash
-#presplash.filename = %(source.dir)s/assets/icon.png
-#icon.filename = %(source.dir)s/assets/icon.png
