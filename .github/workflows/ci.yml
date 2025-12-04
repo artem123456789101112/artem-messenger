@@ -1,11 +1,5 @@
-﻿name: "Build Android APK"
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - "artem_mobile_flet/**"
-      - ".github/workflows/ci.yml"
+﻿name: Build Android APK
+on: workflow_dispatch
 
 jobs:
   build:
@@ -24,127 +18,74 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          python3-pip python3-dev \
-          openjdk-17-jdk \
-          git wget unzip \
-          autoconf automake libtool pkg-config \
-          zlib1g-dev libncurses5-dev \
-          libtinfo5 libsqlite3-dev
+        sudo apt install -y python3-pip python3-dev openjdk-17-jdk git wget unzip
     
     - name: Install Python dependencies
       run: |
-        pip install --upgrade pip setuptools wheel
         pip install buildozer cython flet==0.21.2
     
-    - name: Setup Android NDK 25b and SDK tools
+    - name: Setup Android NDK 25b
       run: |
-        # Download NDK 25b (required by python-for-android)
-        echo "Downloading NDK 25b..."
         wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-        unzip -q android-ndk-r25b-linux.zip -d /tmp/
-        rm android-ndk-r25b-linux.zip
-        
-        # Download and install Android Command Line Tools
-        echo "Downloading Android Command Line Tools..."
+        unzip -q android-ndk-r25b-linux.zip
+        export ANDROID_NDK_HOME=$(pwd)/android-ndk-r25b
+        echo "ANDROID_NDK_HOME=$(pwd)/android-ndk-r25b" >> $GITHUB_ENV
+    
+    - name: Setup Android SDK
+      run: |
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        mkdir -p /tmp/android-cmdline-tools
-        unzip -q commandlinetools-linux-11076708_latest.zip -d /tmp/android-cmdline-tools
-        mv /tmp/android-cmdline-tools/cmdline-tools /tmp/android-cmdline-tools/latest
-        rm commandlinetools-linux-11076708_latest.zip
-        
-        # Set environment variables
-        echo "ANDROID_NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
-        echo "ANDROIDNDK=/tmp/android-ndk-r25b" >> $GITHUB_ENV
-        echo "NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
-        echo "ANDROID_SDK_ROOT=/tmp/android-cmdline-tools" >> $GITHUB_ENV
-        echo "ANDROID_HOME=/tmp/android-cmdline-tools" >> $GITHUB_ENV
-        echo "PATH=/tmp/android-cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+        mkdir -p android-sdk
+        unzip -q commandlinetools-linux-11076708_latest.zip -d android-sdk
+        mv android-sdk/cmdline-tools android-sdk/latest
+        export ANDROID_HOME=$(pwd)/android-sdk
+        echo "ANDROID_HOME=$(pwd)/android-sdk" >> $GITHUB_ENV
+        echo "PATH=$(pwd)/android-sdk/latest/bin:$PATH" >> $GITHUB_ENV
         
         # Accept licenses
-        yes | /tmp/android-cmdline-tools/latest/bin/sdkmanager --licenses || true
-        
-        # Install required SDK components
-        /tmp/android-cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
-        
-        # Create .buildozer directory and symlink NDK
-        mkdir -p ~/.buildozer/android/platform
-        ln -sf /tmp/android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
-        
-        echo "=== Android Setup Complete ==="
-        echo "NDK: /tmp/android-ndk-r25b"
-        echo "SDK: /tmp/android-cmdline-tools"
+        yes | $(pwd)/android-sdk/latest/bin/sdkmanager --licenses || true
+        $(pwd)/android-sdk/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
     
     - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        # Создаем правильный buildozer.spec без deprecated параметров
         cat > buildozer.spec << 'EOF'
 [app]
 title = ARTEM Messenger
 package.name = artem.messenger
 package.domain = org.artem
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
 version = 1.0
 requirements = python3,flet==0.21.2
 orientation = portrait
-fullscreen = 0
-
-# Android configurations
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.ndk_path = /tmp/android-ndk-r25b
-android.sdk_path = /tmp/android-cmdline-tools
 android.accept_sdk_license = True
-android.archs = arm64-v8a,armeabi-v7a
+android.archs = arm64-v8a
 
-# Permissions
-android.permissions = INTERNET, ACCESS_NETWORK_STATE
-
-# Buildozer settings
 [buildozer]
 log_level = 2
-warn_on_root = 1
 EOF
-        
-        echo "=== Buildozer spec ==="
-        cat buildozer.spec
     
-    - name: Build APK with Buildozer
+    - name: Build APK
       working-directory: ./artem_mobile_flet
       run: |
-        echo "Starting APK build..."
-        echo "This will take 60-120 minutes..."
+        echo "Starting build... This will take 60-120 minutes"
+        buildozer android debug 2>&1 | tee build.log
         
-        # Build with verbose output
-        buildozer -v android debug 2>&1 | tee build.log
-        
-        # Check for APK
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK build successful!"
-          echo "APK files:"
           ls -la bin/*.apk
         else
           echo "❌ APK not found!"
-          echo "=== Last 50 lines of build log ==="
-          tail -50 build.log
+          echo "=== Last 100 lines of build log ==="
+          tail -100 build.log
           exit 1
         fi
     
-    - name: Upload APK artifact
-      if: success()
+    - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
-        retention-days: 7
-    
-    - name: Upload build logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Build-Logs
-        path: artem_mobile_flet/build.log
-        retention-days: 3
