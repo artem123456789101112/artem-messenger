@@ -1,52 +1,150 @@
-﻿name: Build APK
-on: workflow_dispatch
+﻿name: "Build Android APK"
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "artem_mobile_flet/**"
+      - ".github/workflows/ci.yml"
+
 jobs:
   build:
-    runs-on: ubuntu-22.04  # Используем стабильную версию
+    runs-on: ubuntu-latest
     timeout-minutes: 180
+    
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
-        python-version: "3.10"  # Более стабильная версия
-    - run: |
+        python-version: "3.11"
+    
+    - name: Install system dependencies
+      run: |
         sudo apt update
-        sudo apt install -y python3-pip python3-dev openjdk-17-jdk git
-        sudo apt install -y cython3 autoconf automake libtool pkg-config
-        pip install buildozer cython flet
-    - working-directory: ./artem_mobile_flet
+        sudo apt install -y \
+          python3-pip python3-dev \
+          openjdk-17-jdk \
+          git wget unzip \
+          autoconf automake libtool pkg-config \
+          zlib1g-dev libncurses5-dev
+    
+    - name: Install Python dependencies
       run: |
-        # Создаем простой buildozer.spec
-        echo "[app]" > buildozer.spec
-        echo "title = ARTEM Messenger" >> buildozer.spec
-        echo "package.name = artem.messenger" >> buildozer.spec
-        echo "package.domain = org.artem" >> buildozer.spec
-        echo "source.dir = ." >> buildozer.spec
-        echo "version = 1.0" >> buildozer.spec
-        echo "requirements = python3,flet" >> buildozer.spec  # Без cython
-        echo "orientation = portrait" >> buildozer.spec
-        echo "android.api = 33" >> buildozer.spec
-        echo "android.minapi = 21" >> buildozer.spec
-        echo "android.accept_sdk_license = true" >> buildozer.spec
-        echo "android.ndk = 23c" >> buildozer.spec  # Стабильная версия
-        echo "" >> buildozer.spec
-        echo "[buildozer]" >> buildozer.spec
-        echo "log_level = 2" >> buildozer.spec
-    - working-directory: ./artem_mobile_flet
+        pip install --upgrade pip setuptools wheel
+        pip install buildozer cython flet==0.21.2
+    
+    - name: Setup Android NDK 25b
       run: |
-        echo "Starting build... This will take 60-120 minutes"
-        # Патч для libffi перед сборкой
-        find . -name "configure.ac" -type f 2>/dev/null | head -5 | while read f; do
-          echo "Patching $f"
-          sed -i 's/AC_PROG_LD/AC_PROG_LD\nAC_PROG_LD_GNU/' "$f" 2>/dev/null || true
-          sed -i 's/AC_TRY_RUN/AC_RUN_IFELSE/' "$f" 2>/dev/null || true
-          sed -i 's/AC_TRY_LINK/AC_LINK_IFELSE/' "$f" 2>/dev/null || true
-          sed -i 's/AC_TRY_COMPILE/AC_COMPILE_IFELSE/' "$f" 2>/dev/null || true
-          sed -i 's/AC_HELP_STRING/AS_HELP_STRING/' "$f" 2>/dev/null || true
-          echo "m4_ifdef([LT_SYS_SYMBOL_USCORE], [LT_SYS_SYMBOL_USCORE])" >> "$f"
-        done
-        buildozer android debug
-    - uses: actions/upload-artifact@v4
+        # Download NDK 25b (required by python-for-android)
+        echo "Downloading NDK 25b..."
+        wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+        unzip -q android-ndk-r25b-linux.zip -d /tmp/
+        rm android-ndk-r25b-linux.zip
+        
+        # Set environment variables for NDK 25b
+        echo "ANDROID_NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
+        echo "ANDROIDNDK=/tmp/android-ndk-r25b" >> $GITHUB_ENV
+        echo "NDK_HOME=/tmp/android-ndk-r25b" >> $GITHUB_ENV
+        
+        # Create .buildozer directory and symlink NDK
+        mkdir -p ~/.buildozer/android/platform
+        ln -sf /tmp/android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
+        
+        # Verify NDK
+        echo "=== NDK Setup ==="
+        ls -la /tmp/android-ndk-r25b
+        echo "NDK path: /tmp/android-ndk-r25b"
+    
+    - name: Accept Android SDK licenses
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        
+        # Accept licenses
+        yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+    
+    - name: Configure Buildozer
+      working-directory: ./artem_mobile_flet
+      run: |
+        # Create proper buildozer.spec
+        cat > buildozer.spec << 'EOF'
+[app]
+title = ARTEM Messenger
+package.name = artem.messenger
+package.domain = org.artem
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 1.0
+requirements = python3,flet==0.21.2
+orientation = portrait
+fullscreen = 0
+
+# Android configurations
+android.api = 33
+android.minapi = 21
+android.sdk = 33
+android.ndk = 25b
+android.ndk_path = /tmp/android-ndk-r25b
+android.sdk_path = /usr/local/lib/android/sdk
+android.accept_sdk_license = True
+android.arch = arm64-v8a
+
+# Buildozer settings
+[buildozer]
+log_level = 2
+warn_on_root = 1
+EOF
+        
+        echo "=== Buildozer spec created ==="
+        cat buildozer.spec
+    
+    - name: Clean Buildozer cache
+      run: |
+        rm -rf ~/.buildozer/cache
+        rm -rf ~/.gradle/caches
+    
+    - name: Build APK with Buildozer
+      working-directory: ./artem_mobile_flet
+      run: |
+        echo "Starting APK build with NDK 25b..."
+        echo "This will take 60-120 minutes..."
+        
+        # Clean first
+        buildozer android clean 2>&1 | tee clean.log
+        
+        # Build with verbose output
+        echo "=== Starting buildozer ==="
+        buildozer -v android debug 2>&1 | tee build.log
+        
+        # Check for APK
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK build successful!"
+          echo "APK files:"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK not found!"
+          echo "=== Last 50 lines of build log ==="
+          tail -50 build.log
+          exit 1
+        fi
+    
+    - name: Upload APK artifact
+      if: success()
+      uses: actions/upload-artifact@v4
       with:
-        name: APK
+        name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
+        retention-days: 7
+    
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Logs
+        path: |
+          artem_mobile_flet/build.log
+          artem_mobile_flet/clean.log
+        retention-days: 3
