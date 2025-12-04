@@ -1,4 +1,4 @@
-﻿name: Build APK
+﻿name: Build APK with Flet
 on: workflow_dispatch
 
 jobs:
@@ -32,41 +32,28 @@ jobs:
         python3 -m pip install cython==0.29.36
         python3 -m pip install flet==0.21.2
         
-        # Проверка установки
+        # УПРОЩЕННАЯ ПРОВЕРКА (без проверки версии flet)
         echo "=== Проверка зависимостей ==="
-        python3 -c "import Cython; print('Cython версия:', Cython.__version__)"
-        python3 -c "import flet; print('Flet версия:', flet.__version__)"
-        which cython || echo "cython не найден в PATH, но это нормально"
+        python3 -c "import Cython; print('✅ Cython установлен версия:', Cython.__version__)"
+        python3 -c "import flet; print('✅ Flet установлен')"
         
     - name: Create buildozer.spec
       working-directory: ./artem_mobile_flet
       run: |
-        # Полностью перезаписываем buildozer.spec
-        rm -f buildozer.spec
-        
         echo "[app]" > buildozer.spec
         echo "title = ARTEM Messenger" >> buildozer.spec
         echo "package.name = artem.messenger" >> buildozer.spec
         echo "package.domain = org.artem" >> buildozer.spec
         echo "source.dir = ." >> buildozer.spec
-        echo "source.include_exts = py,png,jpg,kv,atlas" >> buildozer.spec
         echo "version = 1.0" >> buildozer.spec
-        echo "requirements = python3,kivy==2.3.0" >> buildozer.spec  # Используем kivy вместо flet
+        echo "requirements = python3,flet==0.21.2" >> buildozer.spec
         echo "orientation = portrait" >> buildozer.spec
-        echo "fullscreen = 0" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "# Android" >> buildozer.spec
         echo "android.api = 33" >> buildozer.spec
         echo "android.minapi = 21" >> buildozer.spec
         echo "android.accept_sdk_license = True" >> buildozer.spec
-        echo "android.archs = arm64-v8a" >> buildozer.spec
-        echo "" >> buildozer.spec
-        echo "# Permissions" >> buildozer.spec
-        echo "android.permissions = INTERNET" >> buildozer.spec
         echo "" >> buildozer.spec
         echo "[buildozer]" >> buildozer.spec
         echo "log_level = 2" >> buildozer.spec
-        echo "warn_on_root = 1" >> buildozer.spec
         
         echo "=== buildozer.spec создан ==="
         cat buildozer.spec
@@ -74,47 +61,33 @@ jobs:
     - name: Build APK
       working-directory: ./artem_mobile_flet
       run: |
-        echo "=== ПОДГОТОВКА К СБОРКЕ ==="
+        echo "=== ЗАПУСК СБОРКИ APK ==="
+        echo "Сборка займет 60-120 минут..."
+        echo "НЕ ПРЕРЫВАЙТЕ ПРОЦЕСС!"
         
-        # Очистка предыдущих сборок
+        # Очистка старых сборок
         rm -rf .buildozer bin 2>/dev/null || true
         
-        echo "=== ЗАПУСК BUILDОZER ==="
-        echo "Сборка займет 60-120 минут..."
-        echo "НЕ ЗАКРЫВАЙТЕ И НЕ ПРЕРЫВАЙТЕ!"
+        # Запуск сборки
+        buildozer android debug 2>&1 | tee build.log
         
-        # Запускаем сборку с подробным логом
-        python3 -m buildozer android debug 2>&1 | tee build.log
-        
-        # Проверяем результат каждые 10 секунд
-        timeout_counter=0
-        while [ ! -f bin/*.apk ] && [ $timeout_counter -lt 10 ]; do
-            sleep 10
-            timeout_counter=$((timeout_counter+1))
-            echo "Прошло $((timeout_counter*10)) секунд... APK еще не создан"
-        done
-        
+        # Проверка результата
         if ls bin/*.apk 1> /dev/null 2>&1; then
             echo "✅✅✅ APK УСПЕШНО СОЗДАН! ✅✅✅"
-            echo "Файлы APK:"
             ls -la bin/*.apk
-            echo "РАЗМЕР:"
-            du -h bin/*.apk
         else
             echo "❌ APK не создан"
-            echo "=== ПОСЛЕДНИЕ 100 СТРОК ЛОГА ==="
-            tail -100 build.log
-            echo "=== ПЕРВЫЕ 100 СТРОК ЛОГА ==="
-            head -100 build.log
+            echo "=== Последние 50 строк лога ==="
+            tail -50 build.log
             exit 1
         fi
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: success()
       with:
-        name: APK-File
+        name: ARTEM-Messenger-APK
         path: artem_mobile_flet/bin/*.apk
-        retention-days: 90
         
     - name: Upload logs
       if: always()
@@ -122,4 +95,3 @@ jobs:
       with:
         name: Build-Logs
         path: artem_mobile_flet/build.log
-        retention-days: 7
